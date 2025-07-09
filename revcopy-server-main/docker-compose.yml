@@ -126,7 +126,7 @@ services:
   amazon-crawler:
     build:
       context: ../revcopy-crawlers-api-main/amazon
-      dockerfile: ../revcopy-server-main/dockerfiles/Dockerfile.crawler
+      dockerfile: ../../revcopy-server-main/dockerfiles/Dockerfile.crawler
       target: production
     image: revcopy/amazon-crawler:latest
     container_name: revcopy-amazon-crawler
