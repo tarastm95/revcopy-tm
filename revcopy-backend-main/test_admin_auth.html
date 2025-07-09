@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Auth Test</title>
+</head>
+<body>
+    <h1>Admin Authentication Test</h1>
+    <div id="status">Testing...</div>
+    <div id="templates"></div>
+    
+    <script>
+        async function testAuth() {
+            const statusDiv = document.getElementById('status');
+            const templatesDiv = document.getElementById('templates');
+            
+            try {
+                // Step 1: Login
+                statusDiv.innerHTML = '🔐 Logging in...';
+                const loginResponse = await fetch('http://localhost:8000/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@revcopy.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (!loginResponse.ok) {
+                    throw new Error(`Login failed: ${loginResponse.status}`);
+                }
+                
+                const authData = await loginResponse.json();
+                statusDiv.innerHTML = '✅ Login successful! Token acquired.';
+                
+                // Step 2: Get templates
+                statusDiv.innerHTML += '<br>📋 Fetching templates...';
+                const templatesResponse = await fetch('http://localhost:8000/api/v1/admin/prompt-templates', {
+                    headers: {
+                        'Authorization': `Bearer ${authData.access_token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!templatesResponse.ok) {
+                    throw new Error(`Templates fetch failed: ${templatesResponse.status} ${templatesResponse.statusText}`);
+                }
+                
+                const templates = await templatesResponse.json();
+                statusDiv.innerHTML += '<br>✅ Templates loaded successfully!';
+                templatesDiv.innerHTML = `<h3>Found ${templates.length} templates:</h3>` + 
+                    templates.slice(0, 3).map(t => `<p><strong>${t.category}:</strong> ${t.content.substring(0, 100)}...</p>`).join('');
+                
+            } catch (error) {
+                statusDiv.innerHTML = `❌ Error: ${error.message}`;
+                console.error('Auth test failed:', error);
+            }
+        }
+        
+        // Run test on page load
+        testAuth();
+    </script>
+</body>
+</html>

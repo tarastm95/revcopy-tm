@@ -1,0 +1,51 @@
+# RevCopy Deployment CLI Requirements
+# Professional deployment automation dependencies
+
+# SSH and Remote Operations
+paramiko==3.4.0
+scp==0.14.5
+
+# HTTP and API Requests
+requests==2.31.0
+urllib3==2.0.7
+
+# Configuration and Data Processing
+PyYAML==6.0.1
+python-dotenv==1.0.0
+click==8.1.7
+
+# Logging and Monitoring
+coloredlogs==15.0.1
+rich==13.7.0
+tqdm==4.66.1
+
+# Security and Cryptography
+cryptography>=42.0.0
+bcrypt>=4.0.0
+
+# System and Process Management
+psutil==5.9.6
+sh==2.0.6
+
+# Date and Time
+python-dateutil==2.8.2
+
+# CLI Enhancement
+argparse-dataclass==2.0.0
+tabulate==0.9.0
+
+# File and Path Operations
+pathlib2==2.3.7.post1
+
+# JSON and Data Validation
+jsonschema==4.20.0
+pydantic==2.5.2
+
+# Progress Bars and Terminal UI
+alive-progress==3.1.5
+blessed==1.20.0
+
+# Development and Testing (optional)
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0 

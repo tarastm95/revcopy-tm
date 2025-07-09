@@ -1,0 +1,145 @@
+# ==============================================================================
+# Production-Ready Dockerfile for RevCopy Admin Panel (React + TypeScript)
+# Multi-stage build for optimized production deployment with Nginx
+# ==============================================================================
+
+# Build Stage
+FROM node:18-alpine AS build
+
+# Set working directory
+WORKDIR /app
+
+# Set build arguments
+ARG VITE_API_URL
+ARG VITE_ENVIRONMENT=production
+
+# Set environment variables
+ENV NODE_ENV=production \
+    VITE_API_URL=${VITE_API_URL} \
+    VITE_ENVIRONMENT=${VITE_ENVIRONMENT}
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies with clean cache
+RUN npm ci --only=production --no-audit --prefer-offline && \
+    npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build && \
+    npm run build:dev
+
+# Verify build output
+RUN ls -la /app/dist/
+
+# ==============================================================================
+# Production Stage with Nginx
+# ==============================================================================
+FROM nginx:1.25-alpine AS production
+
+# Install security updates
+RUN apk update && \
+    apk upgrade && \
+    apk add --no-cache \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user (check if nginx user already exists)
+RUN if ! id -u nginx >/dev/null 2>&1; then \
+        addgroup -g 1002 -S nginx && \
+        adduser -S -D -H -u 1002 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx; \
+    fi
+
+# Copy built application from build stage
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy custom Nginx configuration for admin panel
+COPY SERVER/configs/nginx/admin.conf /etc/nginx/conf.d/default.conf
+
+# Copy Nginx main configuration
+COPY SERVER/configs/nginx/nginx-admin.conf /etc/nginx/nginx.conf
+
+# Create necessary directories and set permissions
+RUN mkdir -p /var/cache/nginx /var/log/nginx /var/run && \
+    chown -R nginx:nginx /var/cache/nginx /var/log/nginx /var/run /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
+
+# Create health check endpoint
+RUN echo '<!DOCTYPE html><html><head><title>Admin Health Check</title></head><body><h1>Admin Panel OK</h1></body></html>' > /usr/share/nginx/html/health
+
+# Remove default nginx configs that we don't need
+RUN rm -f /etc/nginx/conf.d/default.conf.bak
+
+# Security: Remove unnecessary files
+RUN rm -rf /usr/share/nginx/html/*.map 2>/dev/null || true
+
+# Set proper permissions for security
+RUN chown -R nginx:nginx /etc/nginx/conf.d/ && \
+    chmod -R 644 /etc/nginx/conf.d/
+
+# Switch to non-root user
+USER nginx
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1
+
+# Expose port
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+
+# ==============================================================================
+# Development Stage
+# ==============================================================================
+FROM node:18-alpine AS development
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV NODE_ENV=development
+
+# Install system dependencies
+RUN apk add --no-cache \
+    git \
+    curl
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Create non-root user
+RUN addgroup -g 1002 -S appuser && \
+    adduser -S -D -H -u 1002 -h /app -s /bin/sh -G appuser -g appuser appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose port (admin runs on 3001 by default)
+EXPOSE 5174
+
+# Development command
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5174"]
+
+# ==============================================================================
+# Metadata
+# ==============================================================================
+LABEL maintainer="RevCopy Team <dev@revcopy.com>" \
+      version="1.0.0" \
+      description="RevCopy Admin Panel - React SPA Production Container" \
+      org.opencontainers.image.title="RevCopy Admin Panel" \
+      org.opencontainers.image.description="AI-powered content generation platform admin interface" \
+      org.opencontainers.image.vendor="RevCopy" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.schema-version="1.0" 

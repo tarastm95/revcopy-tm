@@ -1,0 +1,185 @@
+# ==============================================================================
+# Production-Ready Dockerfile for RevCopy Amazon Crawler (Go)
+# Multi-stage build for optimized production deployment
+# ==============================================================================
+
+# Build Stage
+FROM golang:1.20-alpine AS build
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && \
+    go mod verify
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a -installsuffix cgo \
+    -ldflags='-w -s -extldflags "-static"' \
+    -o amazon-crawler \
+    main.go
+
+# Verify the binary
+RUN chmod +x amazon-crawler && \
+    file amazon-crawler
+
+# ==============================================================================
+# Production Stage
+# ==============================================================================
+FROM alpine:3.18 AS production
+
+# Install security updates and required packages
+RUN apk update && \
+    apk upgrade && \
+    apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1003 -S appuser && \
+    adduser -S -D -H -u 1003 -h /app -s /bin/sh -G appuser -g appuser appuser
+
+# Set timezone
+ENV TZ=UTC
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/temp && \
+    chown -R appuser:appuser /app
+
+# Copy binary from build stage
+COPY --from=build /app/amazon-crawler /app/amazon-crawler
+
+# Create configs directory (will be populated via environment variables)
+RUN mkdir -p /app/configs
+
+# Set proper permissions
+RUN chown appuser:appuser /app/amazon-crawler && \
+    chmod +x /app/amazon-crawler
+
+# Switch to non-root user
+USER appuser
+
+# Set working directory
+WORKDIR /app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Production command
+CMD ["./amazon-crawler"]
+
+# ==============================================================================
+# Development Stage
+# ==============================================================================
+FROM golang:1.20-alpine AS development
+
+# Install development dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    curl \
+    make
+
+# Create non-root user
+RUN addgroup -g 1003 -S appuser && \
+    adduser -S -D -H -u 1003 -h /app -s /bin/sh -G appuser -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/logs /app/temp && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Install air for hot reloading in development
+RUN go install github.com/cosmtrek/air@latest
+
+# Expose port
+EXPOSE 8080
+
+# Development command with hot reloading
+CMD ["air", "-c", ".air.toml"]
+
+# ==============================================================================
+# Testing Stage
+# ==============================================================================
+FROM golang:1.20-alpine AS testing
+
+# Install test dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    make
+
+# Set working directory
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Download dependencies
+RUN go mod download
+
+# Run tests
+RUN go test -v ./...
+
+# Run linting and static analysis
+RUN go vet ./...
+
+# Check formatting
+RUN test -z "$(gofmt -s -l . | tee /dev/stderr)"
+
+# ==============================================================================
+# Security Scanning Stage
+# ==============================================================================
+FROM build AS security
+
+# Install security scanning tools
+RUN go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+
+# Run security scan
+RUN gosec ./...
+
+# ==============================================================================
+# Metadata
+# ==============================================================================
+LABEL maintainer="RevCopy Team <dev@revcopy.com>" \
+      version="1.0.0" \
+      description="RevCopy Amazon Crawler - Go Microservice Production Container" \
+      org.opencontainers.image.title="RevCopy Amazon Crawler" \
+      org.opencontainers.image.description="High-performance Amazon product crawler microservice" \
+      org.opencontainers.image.vendor="RevCopy" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.schema-version="1.0" 

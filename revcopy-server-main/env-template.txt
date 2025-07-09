@@ -1,0 +1,123 @@
+# ==============================================================================
+# RevCopy Server Production Environment Configuration Template
+# ==============================================================================
+# Copy this to .env and fill in the actual values
+
+# ==========================================
+# GENERAL APPLICATION SETTINGS
+# ==========================================
+ENVIRONMENT=production
+DOMAIN=37.27.217.240
+DEBUG=false
+LOG_LEVEL=INFO
+
+# ==========================================
+# SECURITY & AUTHENTICATION
+# ==========================================
+API_SECRET_KEY=revcopy-production-secret-key-2024-very-secure-long-string
+
+# JWT Token Settings
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# ==========================================
+# DATABASE CONFIGURATION
+# ==========================================
+POSTGRES_DB=revcopy_prod
+POSTGRES_USER=revcopy_user
+POSTGRES_PASSWORD=revcopy_prod_secure_2024
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+# Database URL for SQLAlchemy
+DATABASE_URL=postgresql+asyncpg://revcopy_user:revcopy_prod_secure_2024@postgres:5432/revcopy_prod
+
+# ==========================================
+# REDIS CONFIGURATION
+# ==========================================
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=revcopy_secure_password_2024
+REDIS_URL=redis://:revcopy_secure_password_2024@redis:6379/0
+
+# ==========================================
+# AI SERVICE CONFIGURATION
+# ==========================================
+# DeepSeek API (Primary AI Provider)
+DEEPSEEK_API_KEY=sk-b3c9fb0dd5de4e4c9d508adf5bcb4586
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MAX_TOKENS=4000
+
+# OpenAI API (Backup Provider)
+OPENAI_API_KEY=sk-placeholder-openai-key
+OPENAI_MODEL=gpt-4
+OPENAI_MAX_TOKENS=4000
+
+# Default AI Settings
+AI_PROVIDER=deepseek
+AI_TEMPERATURE=0.7
+AI_MAX_TOKENS=2000
+
+# ==========================================
+# API & NETWORKING
+# ==========================================
+API_URL=http://37.27.217.240:8000
+ALLOWED_HOSTS=37.27.217.240,localhost
+CORS_ORIGINS=http://37.27.217.240,http://localhost:3000,http://localhost:5173
+
+# ==========================================
+# CONTENT GENERATION SETTINGS
+# ==========================================
+MAX_REVIEWS_FOR_ANALYSIS=30
+DEFAULT_CONTENT_LANGUAGE=en
+DEFAULT_CULTURAL_REGION=north_america
+
+# ==========================================
+# PRODUCT ANALYSIS SETTINGS
+# ==========================================
+PRODUCT_ANALYSIS_TIMEOUT=300
+MAX_PRODUCT_IMAGES=10
+ENABLE_REVIEW_SENTIMENT_ANALYSIS=true
+
+# ==========================================
+# SECURITY TOKENS & KEYS
+# ==========================================
+SESSION_SECRET=revcopy-session-secret-production-2024
+CSRF_SECRET=revcopy-csrf-secret-production-2024
+
+# ==========================================
+# MONITORING & ANALYTICS
+# ==========================================
+ENABLE_ANALYTICS=true
+ANALYTICS_RETENTION_DAYS=90
+ENABLE_PERFORMANCE_MONITORING=true
+
+# ==========================================
+# FILE UPLOAD & STORAGE
+# ==========================================
+MAX_FILE_SIZE=10485760
+UPLOAD_DIRECTORY=/app/uploads
+ALLOWED_FILE_TYPES=jpg,jpeg,png,gif,pdf
+
+# ==========================================
+# RATE LIMITING
+# ==========================================
+RATE_LIMIT_PER_MINUTE=60
+RATE_LIMIT_PER_HOUR=1000
+RATE_LIMIT_PER_DAY=10000
+
+# ==========================================
+# EMAIL CONFIGURATION (Optional)
+# ==========================================
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+EMAIL_FROM=noreply@revcopy.com
+
+# ==========================================
+# WEBHOOK CONFIGURATION (Optional)
+# ==========================================
+WEBHOOK_SECRET=revcopy-webhook-secret-2024
+ENABLE_WEBHOOKS=false 

@@ -1,0 +1,28 @@
+# RevCopy Webhook Handler Requirements
+# Flask-based deployment automation server
+
+# Web Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# HTTP and Requests
+requests==2.31.0
+urllib3==2.0.7
+
+# Security and Authentication
+cryptography==41.0.8
+PyJWT==2.8.0
+
+# System and Process Management
+psutil==5.9.6
+
+# Logging and Configuration
+python-dotenv==1.0.0
+PyYAML==6.0.1
+
+# Date and Time
+python-dateutil==2.8.2
+
+# Development and Testing
+gunicorn==21.2.0
+waitress==2.1.2 

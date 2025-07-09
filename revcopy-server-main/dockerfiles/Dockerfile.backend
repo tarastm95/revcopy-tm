@@ -1,0 +1,147 @@
+# ==============================================================================
+# Production-Ready Dockerfile for RevCopy Backend (FastAPI)
+# Multi-stage build for optimized production deployment
+# ==============================================================================
+
+# Base image with Python 3.11
+FROM python:3.11-slim-bullseye AS base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# ==============================================================================
+# Dependencies Stage
+# ==============================================================================
+FROM base AS dependencies
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ==============================================================================
+# Development Stage
+# ==============================================================================
+FROM dependencies AS development
+
+# Install development dependencies
+RUN pip install --no-cache-dir \
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    black \
+    flake8 \
+    mypy \
+    pre-commit
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/uploads /app/logs /app/temp && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Development command
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# ==============================================================================
+# Production Stage
+# ==============================================================================
+FROM dependencies AS production
+
+# Install production utilities
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set production environment
+ENV ENVIRONMENT=production
+
+# Copy application code
+COPY . .
+
+# Create application directories with proper permissions
+RUN mkdir -p /app/uploads /app/logs /app/temp /app/static && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app
+
+# Remove development files
+RUN rm -rf /app/tests /app/.git /app/.pytest_cache /app/docs
+
+# Install security updates and remove unnecessary packages
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy entrypoint script
+COPY SERVER/scripts/backend-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chown appuser:appuser /entrypoint.sh
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Set entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Production command with Gunicorn for better performance
+CMD ["gunicorn", "app.main:app", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--workers", "4", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "120", \
+     "--keep-alive", "2", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
+     "--preload", \
+     "--access-logfile", "/app/logs/access.log", \
+     "--error-logfile", "/app/logs/error.log", \
+     "--log-level", "info"]
+
+# ==============================================================================
+# Metadata
+# ==============================================================================
+LABEL maintainer="RevCopy Team <dev@revcopy.com>" \
+      version="1.0.0" \
+      description="RevCopy Backend API - FastAPI Production Container" \
+      org.opencontainers.image.title="RevCopy Backend" \
+      org.opencontainers.image.description="AI-powered content generation platform backend" \
+      org.opencontainers.image.vendor="RevCopy" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.schema-version="1.0" 

@@ -1,0 +1,499 @@
+version: '3.8'
+
+# Production-Ready Docker Compose for RevCopy Platform
+# Enterprise-grade configuration with high availability, security, and monitoring
+
+services:
+  # ==========================================
+  # CORE APPLICATION SERVICES
+  # ==========================================
+
+  # Backend API Service (FastAPI)
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../SERVER/dockerfiles/Dockerfile.backend
+      target: production
+    image: revcopy/backend:latest
+    container_name: revcopy-backend
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SECRET_KEY=${API_SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - AMAZON_CRAWLER_URL=http://amazon-crawler:8080
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - LOG_LEVEL=INFO
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_logs:/app/logs
+    networks:
+      - backend_network
+      - database_network
+      - cache_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/temp
+
+  # Frontend Service (React SPA)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../SERVER/dockerfiles/Dockerfile.frontend
+      target: production
+      args:
+        - VITE_API_URL=https://${DOMAIN}/api
+        - VITE_ENVIRONMENT=production
+    image: revcopy/frontend:latest
+    container_name: revcopy-frontend
+    restart: unless-stopped
+    networks:
+      - frontend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+
+  # Admin Panel Service (React SPA)
+  admin:
+    build:
+      context: ../admin
+      dockerfile: ../SERVER/dockerfiles/Dockerfile.admin
+      target: production
+      args:
+        - VITE_API_URL=https://${DOMAIN}/api
+        - VITE_ENVIRONMENT=production
+    image: revcopy/admin:latest
+    container_name: revcopy-admin
+    restart: unless-stopped
+    networks:
+      - frontend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+
+  # Amazon Crawler Service (Go)
+  amazon-crawler:
+    build:
+      context: ../crawlers/amazon
+      dockerfile: ../../SERVER/dockerfiles/Dockerfile.crawler
+      target: production
+    image: revcopy/amazon-crawler:latest
+    container_name: revcopy-amazon-crawler
+    restart: unless-stopped
+    environment:
+      - GIN_MODE=release
+      - PORT=8080
+      - JWT_SECRET=${API_SECRET_KEY}
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_DURATION=60s
+      - LOG_LEVEL=INFO
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.8'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # ==========================================
+  # DATABASE SERVICES
+  # ==========================================
+
+  # PostgreSQL Primary Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: revcopy-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./configs/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./scripts/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - postgres_logs:/var/log/postgresql
+    networks:
+      - database_network
+    ports:
+      - "127.0.0.1:5432:5432"  # Only bind to localhost for security
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    command: >
+      postgres 
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: revcopy-redis
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./configs/redis/redis.conf:/etc/redis/redis.conf:ro
+    networks:
+      - cache_network
+    ports:
+      - "127.0.0.1:6379:6379"  # Only bind to localhost for security
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+    security_opt:
+      - no-new-privileges:true
+    command: redis-server /etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+
+  # ==========================================
+  # LOAD BALANCER & REVERSE PROXY
+  # ==========================================
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: revcopy-nginx
+    restart: unless-stopped
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/sites:/etc/nginx/conf.d:ro
+      - ./configs/nginx/ssl:/etc/nginx/ssl:ro
+      - ./configs/nginx/security:/etc/nginx/security:ro
+      - nginx_logs:/var/log/nginx
+      - certbot_webroot:/var/www/certbot:ro
+      - letsencrypt_certs:/etc/letsencrypt:ro
+    networks:
+      - frontend_network
+      - backend_network
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - admin
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/nginx-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    security_opt:
+      - no-new-privileges:true
+
+  # Certbot for SSL Certificate Management
+  certbot:
+    image: certbot/certbot:latest
+    container_name: revcopy-certbot
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - letsencrypt_certs:/etc/letsencrypt
+      - letsencrypt_lib:/var/lib/letsencrypt
+    networks:
+      - frontend_network
+    command: >
+      sh -c "
+        trap exit TERM;
+        while :; do
+          certbot renew --webroot --webroot-path=/var/www/certbot --quiet;
+          sleep 12h & wait $${!};
+        done;
+      "
+
+  # ==========================================
+  # MONITORING & OBSERVABILITY
+  # ==========================================
+
+  # Prometheus Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: revcopy-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./configs/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring_network
+      - backend_network
+    ports:
+      - "127.0.0.1:9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Grafana Monitoring Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: revcopy-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    volumes:
+      - ./configs/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring_network
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+
+  # Node Exporter for System Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: revcopy-node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - monitoring_network
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # cAdvisor for Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: revcopy-cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - monitoring_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.3'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+# ==========================================
+# NETWORKS
+# ==========================================
+networks:
+  frontend_network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+  
+  backend_network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+  
+  database_network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+  
+  cache_network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.23.0.0/16
+  
+  monitoring_network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.24.0.0/16
+
+# ==========================================
+# VOLUMES
+# ==========================================
+volumes:
+  # Application Data
+  backend_uploads:
+    driver: local
+  backend_logs:
+    driver: local
+
+  # Database Data
+  postgres_data:
+    driver: local
+  postgres_logs:
+    driver: local
+  redis_data:
+    driver: local
+
+  # SSL & Certificates
+  letsencrypt_certs:
+    driver: local
+  letsencrypt_lib:
+    driver: local
+  certbot_webroot:
+    driver: local
+
+  # Logs
+  nginx_logs:
+    driver: local
+
+  # Monitoring Data
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local 
