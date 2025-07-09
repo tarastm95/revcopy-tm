@@ -135,8 +135,8 @@ services:
   # Backend API
   backend:
     build:
-      context: ../backend
-      dockerfile: ../SERVER/dockerfiles/Dockerfile.backend
+      context: ../revcopy-backend-main
+      dockerfile: ./dockerfiles/Dockerfile.backend
       target: production
     image: revcopy/backend:${VERSION:-latest}
     container_name: revcopy-backend
@@ -194,8 +194,8 @@ services:
   # Frontend Application
   frontend:
     build:
-      context: ../frontend
-      dockerfile: ../SERVER/dockerfiles/Dockerfile.frontend
+      context: ../revcopy-frontend-main
+      dockerfile: ./dockerfiles/Dockerfile.frontend
       target: production
     image: revcopy/frontend:${VERSION:-latest}
     container_name: revcopy-frontend
@@ -234,8 +234,8 @@ services:
   # Admin Panel
   admin:
     build:
-      context: ../admin
-      dockerfile: ../SERVER/dockerfiles/Dockerfile.admin
+      context: ../revcopy-admin-main
+      dockerfile: ./dockerfiles/Dockerfile.admin
       target: production
     image: revcopy/admin:${VERSION:-latest}
     container_name: revcopy-admin
@@ -274,8 +274,8 @@ services:
   # Amazon Crawler Service
   amazon-crawler:
     build:
-      context: ../crawlers/amazon
-      dockerfile: ../../SERVER/dockerfiles/Dockerfile.crawler
+      context: ../revcopy-crawlers-api-main/amazon
+      dockerfile: ./dockerfiles/Dockerfile.crawler
       target: production
     image: revcopy/amazon-crawler:${VERSION:-latest}
     container_name: revcopy-amazon-crawler

@@ -54,7 +54,7 @@ This directory contains production-ready Docker orchestration and infrastructure
 ### 1. Environment Setup
 ```bash
 # Clone and navigate to server directory
-cd SERVER
+cd revcopy-server-main
 
 # Copy environment template
 cp .env.example .env
