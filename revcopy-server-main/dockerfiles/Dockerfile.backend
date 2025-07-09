@@ -103,7 +103,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy entrypoint script
-COPY revcopy-server-main/scripts/backend-entrypoint.sh /entrypoint.sh
+COPY scripts/backend-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
     chown appuser:appuser /entrypoint.sh
 
